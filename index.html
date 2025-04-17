@@ -1,0 +1,1256 @@
+﻿<!-- 
+  Developer: Manolis Mariakakis
+  Created: 2025-04-01
+  Github: https://github.com/ManolisMariakakis/Guitar-Chord-Sheet-Generator/blob/main/LICENSE
+-->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lyrics + Guitar Chord Chart</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+
+        @media print {
+            body {
+                width: 100%;
+                font-size: 12pt;
+                margin: 0;
+                padding: 0;
+                margin-bottom: 35mm;
+                /* leave space for footer */
+                font-family: monospace !important;
+            }
+
+            .controls,
+            .print-button,
+            #missing-chords {
+                display: none !important;
+            }
+
+            #output {
+                page-break-after: always;
+            }
+
+            .chord-chart-container {
+                display: block;
+                page-break-inside: avoid;
+                break-inside: avoid;
+                margin-top: 10px;
+                margin-bottom: 40mm;
+            }
+
+            .chart-grid {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+
+            .chart-item {
+                flex: 0 0 auto;
+                text-align: center;
+                font-size: 0.875rem;
+                max-width: 100px;
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
+
+            .fretboard {
+                page-break-inside: avoid;
+            }
+        }
+
+
+        body {
+            font-family: sans-serif;
+            padding: 0 20px 20px 20px;
+            max-width: 800px;
+            margin: 0;
+        }
+
+        .block {
+            margin-bottom: 2em;
+        }
+
+        .text-label {
+            font-weight: bold;
+            margin-bottom: 0.5em;
+        }
+
+        .chord-line,
+        .lyric-line {
+            white-space: pre;
+            font-family: monospace;
+        }
+
+        .chord {
+            color: #0066cc;
+            font-weight: bold;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .chord-diagram {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            z-index: 999;
+            background: white;
+            border: 1px solid #ccc;
+            padding: 8px;
+            font-size: 0;
+            /* 🧙 prevents accidental vertical space */
+            line-height: 0;
+        }
+
+        .chord:hover .chord-diagram {
+            display: block;
+        }
+
+        .fretboard {
+            display: grid;
+            grid-template-columns: repeat(6, 20px);
+            grid-template-rows: repeat(5, 20px);
+            gap: 2px;
+        }
+
+
+        .fretboard div {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border: 1px solid #aaa;
+        }
+
+        .dot {
+            display: block;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            box-sizing: border-box;
+            background: #000 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+
+        .controls {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: #f6f6f7;
+            border-bottom: 1px solid #ddd;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            padding: 0.75rem 1rem;
+            margin-bottom: 1em;
+            font-size: 0.875rem;
+            border-radius: 0 0 6px 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .controls-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: flex-start;
+        }
+
+        .control-cell {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 30%;
+            flex-wrap: nowrap;
+        }
+
+        .control-cell input[type="number"] {
+            width: 60px;
+            text-align: center;
+        }
+
+        .step-button {
+            padding: 5px 10px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            background: #eee;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .step-button:active {
+            background: #ccc;
+        }
+
+        .control-cell label {
+            font-weight: 500;
+            margin-bottom: 0;
+            white-space: nowrap;
+        }
+
+        .control-cell button {
+            padding: 5px 5px;
+            font-size: 0.875rem;
+            border: 2px solid #008cb7;
+            border-radius: 4px;
+            background: transparent;
+            color: #008cb7;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .control-cell button:hover {
+            background: #008cb7;
+            color: white;
+        }
+
+        @media (max-width: 600px) {
+            .controls-row {
+                flex-direction: row;
+                /* ✅ Stay horizontal */
+                flex-wrap: wrap;
+                /* ✅ Allow wrapping if needed */
+                gap: 10px;
+            }
+
+            .control-cell {
+                width: 48%;
+                justify-content: flex-start;
+            }
+
+            .control-cell button {
+                padding: 5px 5px;
+            }
+
+            .control-cell input[type="number"] {
+                width: 30px;
+                text-align: center;
+            }
+        }
+
+
+
+
+        .print-button {
+            margin-bottom: 20px;
+        }
+
+        #chord-chart {
+            margin-top: 50px;
+        }
+
+        .chart-title {
+            font-size: 18px;
+            margin-bottom: 1em;
+            font-weight: bold;
+        }
+
+        .chart-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .chart-item {
+            flex: 0 0 auto;
+            /* Prevent shrinking */
+            text-align: center;
+            font-size: 0.875rem;
+        }
+
+        .missing-chords {
+            margin-top: 2em;
+            color: red;
+            font-weight: bold;
+        }
+
+        #output {
+            display: inline-block;
+        }
+
+        .section-separator {
+            border-top: 1px dashed #ccc;
+            margin: 0em 0 1em;
+            opacity: 0.5;
+        }
+
+        @media print {
+            #transpose-debug-container {
+                display: none !important;
+            }
+
+            .ymnoi-header {
+                display: none !important;
+            }
+        }
+
+        .ymnoi-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background-image: radial-gradient(at bottom center, #007b9f 0%, #0099c6 100%);
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #004d60;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .ymnoi-logo {
+            height: 40px;
+            width: auto;
+        }
+
+        .controls {
+            top: 60px;
+            /* Adjust depending on header height */
+        }
+
+        .print-footer {
+            display: none;
+        }
+
+        @media print {
+            .print-footer {
+                display: block;
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                width: 100%;
+                padding: 5mm 0 5mm 0;
+                /* removed side padding */
+                font-size: 10pt;
+                color: black;
+                background: white;
+                border-top: 1px solid #aaa;
+                font-family: sans-serif;
+                text-align: left;
+            }
+        }
+
+        .string-labels div {
+            padding: 0;
+            margin: 0;
+            line-height: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="print-footer" id="print-footer">MyTitle - </div>
+
+    <header class="ymnoi-header">
+        <img src="logo.png" alt="MyTitle Logo" class="ymnoi-logo">
+    </header>
+
+    <div class="controls">
+        <!-- Row 1: Font size | Fret size -->
+        <div class="controls-row">
+            <!-- Font size -->
+            <div class="control-cell">
+                <label for="font-size-input">Font size:</label>
+                <button type="button" class="step-button" data-target="font-size-input" data-step="-1">−</button>
+                <input type="number" id="font-size-input" min="8" max="48" value="14">
+                <button type="button" class="step-button" data-target="font-size-input" data-step="1">+</button>
+            </div>
+
+            <!-- Fret size -->
+            <div class="control-cell">
+                <label for="fret-size">Fret size:</label>
+                <button type="button" class="step-button" data-target="fret-size" data-step="-1">−</button>
+                <input type="number" id="fret-size" min="10" max="15" value="15">
+                <button type="button" class="step-button" data-target="fret-size" data-step="1">+</button>
+            </div>
+        </div>
+
+        <!-- Row 2: Transpose +1 | Transpose -1 -->
+        <div class="controls-row">
+            <div class="control-cell">
+                <button id="transpose-up">Transpose +1</button>
+            </div>
+            <div class="control-cell">
+                <button id="transpose-down">Transpose -1</button>
+            </div>
+        </div>
+
+        <!-- Row 3: Print | Export PDF -->
+        <div class="controls-row">
+            <div class="control-cell">
+                <button onclick="window.print()">Print</button>
+            </div>
+            <div class="control-cell">
+                <button id="download-pdf">Export PDF</button>
+            </div>
+        </div>
+    </div>
+
+
+
+
+
+
+
+    <div id="title" style="font-size:24px;font-weight:bold;"></div>
+    <div id="output" style="font-family: monospace;"></div>
+
+    <div class="chord-chart-container" style="display: none;">
+        <div id="chord-chart">
+            <div class="chart-title">Guitar Chord Chart</div>
+            <div class="chart-grid" id="chart-grid"></div>
+            <div id="missing-chords" class="missing-chords"></div>
+        </div>
+    </div>
+    <div id="transpose-debug-container" style="display: none; margin-top: 30px;">
+        <div class="chart-title">Transpose Debug Info</div>
+        <table id="transpose-debug-table" border="1" cellpadding="5" cellspacing="0"
+            style="border-collapse: collapse; font-family: monospace;">
+            <thead>
+                <tr>
+                    <th>Original</th>
+                    <th>Root</th>
+                    <th>Suffix</th>
+                    <th>Bass</th>
+                    <th>Transposed</th>
+                    <th>Exists</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        let input = '';
+        let key = '';
+        let debugChordSet = new Set();
+
+        const quitarShapes = {
+            "C": [["0", "1", "0", "2", "3", "x"], ["0", "1", "0", "2", "3", "0"]],
+            "C/E": [["0", "1", "0", "2", "3", "0"], ["0", "1", "0", "2", "3", "0"]],
+            "C/G": [["0", "1", "0", "2", "3", "3"], ["0", "1", "0", "2", "4", "3"]],
+            "Cm": [["3", "4", "5", "5", "3", "x"], ["1", "2", "4", "3", "1", "0"]],
+            "Cm/D#": [["3", "1", "0", "1", "x", "x"], ["4", "2", "0", "1", "0", "0"]],
+            "Cm/E": [["3", "1", "0", "1", "3", "0"], ["4", "2", "0", "1", "3", "0"]],
+            "Cm/G": [["3", "4", "5", "5", "3", "3"], ["1", "2", "4", "3", "1", "1"]],
+            "Cdim": [["x", "4", "5", "4", "3", "x"], ["0", "3", "4", "2", "1", "0"]],
+            "Csus2": [["3", "3", "0", "0", "3", "x"], ["3", "2", "0", "0", "1", "0"]],
+            "Csus4": [["1", "1", "0", "3", "3", "x"], ["1", "1", "0", "4", "3", "0"]],
+            "C7": [["0", "1", "3", "2", "3", "x"], ["0", "1", "4", "2", "3", "0"]],
+            "Cm7": [["3", "4", "3", "5", "3", "x"], ["1", "2", "1", "3", "1", "0"]],
+            "Cmaj7": [["0", "0", "0", "2", "3", "x"], ["0", "0", "0", "1", "2", "0"]],
+            "C#": [["1", "2", "1", "3", "4", "x"], ["1", "2", "1", "3", "4", "0"]],
+            "C#/F": [["1", "2", "1", "3", "4", "1"], ["1", "2", "1", "3", "4", "1"]],
+            "C#/G#": [["4", "6", "6", "6", "4", "4"], ["1", "4", "3", "2", "1", "1"]],
+            "C#m": [["4", "5", "6", "6", "4", "x"], ["1", "2", "4", "3", "1", "0"]],
+            "C#m/E": [["0", "2", "1", "2", "x", "0"], ["0", "3", "1", "2", "0", "0"]],
+            "C#m/G#": [["0", "2", "1", "x", "x", "x"], ["0", "2", "1", "0", "0", "0"]],
+            "C#dim": [["x", "5", "6", "5", "4", "x"], ["0", "3", "4", "2", "1", "0"]],
+            "C#7": [["4", "6", "4", "6", "4", "x"], ["1", "4", "1", "3", "1", "0"]],
+            "C#m7": [["4", "5", "4", "6", "4", "x"], ["1", "2", "1", "3", "1", "0"]],
+            "D": [["2", "3", "2", "0", "x", "x"], ["2", "3", "1", "0", "0", "0"]],
+            "D/E": [["2", "3", "2", "0", "0", "0"], ["2", "3", "1", "0", "0", "0"]],
+            "D/F#": [["2", "3", "2", "0", "0", "2"], ["3", "4", "2", "0", "0", "1"]],
+            "D/A": [["2", "3", "2", "0", "0", "x"], ["2", "3", "1", "0", "0", "0"]],
+            "Dm/C": [["x", "3", "2", "3", "3", "x"], ["0", "4", "1", "3", "2", "0"]],
+            "Dm": [["1", "3", "2", "0", "x", "x"], ["1", "3", "2", "0", "0", "0"]],
+            "Dm/F": [["x", "3", "2", "3", "0", "1"], ["0", "4", "2", "3", "0", "1"]],
+            "Dm/A": [["1", "3", "2", "0", "0", "x"], ["1", "3", "2", "0", "0", "0"]],
+            "Ddim": [["1", "3", "1", "0", "x", "x"], ["2", "4", "1", "0", "0", "0"]],
+            "Dsus2": [["0", "3", "2", "0", "x", "x"], ["0", "2", "1", "0", "0", "0"]],
+            "Dsus4": [["3", "3", "2", "0", "x", "x"], ["3", "2", "1", "0", "0", "0"]],
+            "D7": [["2", "1", "2", "0", "x", "x"], ["3", "1", "2", "0", "0", "0"]],
+            "D7/A": [["2", "1", "2", "0", "0", "x"], ["3", "1", "2", "0", "0", "0"]],
+            "Dm7": [["1", "1", "2", "0", "x", "x"], ["1", "1", "2", "0", "0", "0"]],
+            "Dmaj7": [["2", "2", "2", "0", "x", "x"], ["4", "1", "1", "0", "0", "0"]],
+            "D#": [["3", "4", "3", "1", "x", "x"], ["3", "4", "2", "1", "0", "0"]],
+            "Eb": [["3", "4", "3", "1", "x", "x"], ["3", "4", "2", "1", "0", "0"]],
+            "D#/G": [["3", "x", "3", "1", "1", "3"], ["4", "0", "3", "1", "1", "2"]],
+            "Eb/G": [["3", "x", "3", "1", "1", "3"], ["4", "0", "3", "1", "1", "2"]],
+            "D#/A#": [["3", "4", "3", "1", "1", "x"], ["4", "4", "3", "1", "1", "0"]],
+            "D#m": [["6", "7", "8", "8", "6", "x"], ["1", "2", "4", "3", "1", "0"]],
+            "D#m/F#": [["2", "4", "3", "4", "x", "2"], ["1", "4", "2", "3", "4", "1"]],
+            "D#m/A#": [["2", "4", "3", "1", "1", "x"], ["2", "4", "3", "1", "1", "0"]],
+            "D#dim": [["2", "4", "2", "1", "x", "x"], ["3", "4", "2", "1", "0", "0"]],
+            "D#7": [["3", "2", "0", "1", "x", "x"], ["3", "2", "0", "1", "0", "0"]],
+            "Eb7": [["3", "2", "0", "1", "x", "x"], ["3", "2", "0", "1", "0", "0"]],
+            "Ebmaj7": [["3", "3", "3", "1", "x", "x"], ["4", "3", "2", "1", "0", "0"]],
+            "E": [["0", "0", "1", "2", "2", "0"], ["0", "0", "1", "3", "2", "0"]],
+            "E/G#": [["0", "0", "1", "x", "x", "x"], ["0", "0", "1", "0", "0", "0"]],
+            "E/B": [["0", "0", "1", "2", "2", "x"], ["0", "0", "1", "3", "2", "0"]],
+            "Em": [["0", "0", "0", "2", "2", "0"], ["0", "0", "0", "2", "1", "0"]],
+            "Em/G": [["0", "0", "0", "2", "2", "3"], ["0", "0", "0", "2", "1", "3"]],
+            "Em/B": [["0", "0", "0", "2", "2", "x"], ["0", "0", "0", "2", "1", "0"]],
+            "Edim": [["0", "x", "0", "2", "1", "0"], ["0", "0", "0", "2", "1", "0"]],
+            "E7": [["0", "0", "1", "0", "2", "0"], ["0", "0", "1", "0", "2", "0"]],
+            "E7/G#": [["4", "5", "4", "6", "5", "4"], ["1", "3", "1", "4", "2", "1"]],
+            "Em7": [["0", "0", "0", "0", "2", "0"], ["0", "0", "0", "0", "1", "0"]],
+            "F/C": [["1", "1", "2", "3", "3", "x"], ["1", "1", "2", "4", "3", "0"]],
+            "F": [["1", "1", "2", "3", "3", "1"], ["1", "1", "2", "4", "3", "1"]],
+            "F/G": [["1", "1", "2", "3", "0", "3"], ["1", "1", "2", "4", "0", "3"]],
+            "F/A": [["1", "1", "2", "3", "0", "x"], ["1", "1", "2", "3", "0", "0"]],
+            "Fm/C": [["1", "1", "1", "3", "3", "x"], ["1", "1", "1", "4", "3", "0"]],
+            "Fm": [["1", "1", "1", "3", "3", "1"], ["1", "1", "1", "4", "3", "1"]],
+            "Fm/G#": [["1", "1", "1", "3", "3", "4"], ["1", "1", "1", "3", "2", "4"]],
+            "Fdim": [["1", "x", "1", "3", "2", "1"], ["1", "0", "1", "3", "2", "1"]],
+            "F7": [["1", "1", "x", "1", "0", "1"], ["4", "3", "0", "2", "0", "1"]],
+            "Fmaj7": [["1", "1", "2", "2", "3", "1"], ["1", "1", "3", "2", "4", "1"]],
+            "F6": [["1", "1", "2", "0", "0", "1"], ["3", "2", "4", "0", "0", "1"]],
+            "F#/C#": [["2", "2", "3", "4", "4", "x"], ["4", "1", "2", "4", "3", "0"]],
+            "F#": [["2", "2", "3", "4", "4", "2"], ["1", "4", "2", "4", "4", "1"]],
+            "F#/A#": [["2", "2", "3", "4", "1", "x"], ["4", "2", "3", "4", "1", "0"]],
+            "F#m/C#": [["2", "2", "2", "4", "4", "x"], ["4", "1", "1", "4", "3", "0"]],
+            "F#m": [["2", "2", "2", "x", "0", "2"], ["4", "3", "2", "0", "0", "1"]],
+            "F#m/A": [["2", "2", "2", "x", "0", "x"], ["4", "1", "1", "0", "0", "0"]],
+            "F#dim": [["2", "x", "2", "4", "3", "2"], ["1", "4", "1", "3", "4", "1"]],
+            "F#7": [["0", "2", "x", "2", "1", "2"], ["0", "4", "0", "3", "1", "2"]],
+            "G/D": [["3", "0", "0", "0", "x", "x"], ["1", "0", "0", "0", "0", "0"]],
+            "G": [["3", "0", "0", "0", "2", "3"], ["3", "0", "0", "0", "1", "2"]],
+            "G/B": [["3", "3", "0", "0", "2", "x"], ["3", "2", "0", "0", "1", "0"]],
+            "Gm/D": [["3", "3", "3", "0", "x", "x"], ["4", "1", "1", "0", "0", "0"]],
+            "Gm/F": [["3", "3", "3", "3", "x", "x"], ["1", "1", "1", "1", "0", "0"]],
+            "Gm": [["3", "3", "3", "0", "x", "3"], ["4", "3", "2", "0", "0", "1"]],
+            "Gm/A#": [["3", "3", "3", "0", "1", "x"], ["4", "3", "2", "0", "1", "0"]],
+            "Gdim": [["3", "x", "3", "5", "4", "3"], ["1", "0", "1", "3", "2", "1"]],
+            "Gsus2": [["3", "3", "0", "0", "0", "3"], ["3", "2", "0", "0", "0", "1"]],
+            "Gsus4": [["3", "3", "0", "0", "3", "3"], ["4", "3", "0", "0", "2", "1"]],
+            "G7": [["1", "0", "0", "0", "2", "3"], ["1", "0", "0", "0", "2", "3"]],
+            "Gm7": [["3", "3", "3", "3", "5", "3"], ["1", "1", "1", "1", "3", "1"]],
+            "G#/C": [["4", "4", "1", "1", "3", "x"], ["4", "4", "1", "1", "3", "0"]],
+            "G#/D#": [["4", "4", "5", "6", "6", "x"], ["1", "1", "2", "4", "3", "0"]],
+            "G#": [["4", "4", "5", "6", "6", "4"], ["1", "1", "2", "4", "3", "1"]],
+            "Ab": [["4", "4", "5", "6", "6", "4"], ["1", "1", "2", "4", "3", "1"]],
+            "G#m/D#": [["x", "0", "1", "1", "x", "x"], ["0", "0", "2", "1", "0", "0"]],
+            "G#m": [["4", "4", "4", "6", "6", "4"], ["1", "1", "1", "4", "3", "1"]],
+            "G#m/B": [["x", "0", "1", "1", "2", "x"], ["0", "0", "2", "1", "3", "0"]],
+            "G#dim": [["4", "x", "4", "6", "5", "4"], ["1", "0", "1", "3", "2", "1"]],
+            "G#7": [["4", "4", "5", "4", "6", "4"], ["1", "1", "2", "1", "3", "1"]],
+            "Ab7": [["4", "4", "5", "4", "6", "4"], ["1", "1", "2", "1", "3", "1"]],
+            "A/C#": [["5", "5", "2", "2", "4", "x"], ["4", "4", "4", "1", "3", "0"]],
+            "A/E": [["0", "2", "2", "2", "0", "0"], ["0", "3", "2", "1", "0", "0"]],
+            "A/G": [["0", "2", "2", "2", "0", "3"], ["0", "3", "2", "1", "0", "4"]],
+            "A": [["0", "2", "2", "2", "0", "x"], ["0", "3", "2", "1", "0", "0"]],
+            "Am/C": [["0", "1", "2", "2", "3", "x"], ["0", "1", "3", "2", "4", "0"]],
+            "Am/E": [["0", "1", "2", "2", "0", "0"], ["0", "1", "3", "2", "0", "0"]],
+            "Am/G": [["5", "5", "5", "5", "x", "x"], ["1", "1", "1", "1", "0", "0"]],
+            "Am": [["0", "1", "2", "2", "0", "x"], ["0", "1", "3", "2", "0", "0"]],
+            "Adim": [["x", "1", "2", "1", "0", "x"], ["0", "2", "3", "1", "0", "0"]],
+            "Asus2": [["0", "0", "2", "2", "0", "x"], ["0", "0", "2", "1", "0", "0"]],
+            "Asus4": [["0", "3", "2", "0", "0", "x"], ["0", "2", "1", "0", "0", "0"]],
+            "A7/C#": [["5", "5", "6", "5", "4", "x"], ["4", "2", "3", "2", "1", "0"]],
+            "A7": [["0", "2", "0", "2", "0", "x"], ["0", "2", "0", "1", "0", "0"]],
+            "Am7": [["0", "1", "0", "2", "0", "x"], ["0", "1", "0", "2", "0", "0"]],
+            "Bb/C": [["1", "3", "3", "0", "3", "x"], ["1", "4", "3", "0", "2", "0"]],
+            "Bb/C#": [["6", "3", "3", "3", "4", "x"], ["4", "1", "1", "1", "2", "0"]],
+            "A#/D": [["1", "3", "3", "0", "x", "x"], ["1", "4", "3", "0", "0", "0"]],
+            "Bb/D": [["1", "3", "3", "0", "x", "x"], ["1", "4", "3", "0", "0", "0"]],
+            "Bb/D#": [["1", "3", "3", "1", "x", "x"], ["2", "4", "3", "1", "0", "0"]],
+            "Bb/E": [["1", "3", "3", "3", "1", "0"], ["1", "4", "3", "2", "1", "0"]],
+            "A#/F": [["1", "3", "3", "3", "1", "1"], ["1", "4", "3", "2", "1", "1"]],
+            "Bb/F": [["1", "3", "3", "3", "1", "1"], ["1", "4", "3", "2", "1", "1"]],
+            "Bb/F#": [["x", "3", "3", "3", "1", "2"], ["0", "4", "3", "3", "1", "2"]],
+            "Bb/G": [["1", "3", "x", "3", "1", "3"], ["1", "4", "0", "3", "1", "2"]],
+            "A#/G#": [["x", "3", "3", "3", "1", "4"], ["0", "4", "3", "3", "1", "4"]],
+            "Bb/G#": [["x", "3", "3", "3", "1", "4"], ["0", "4", "3", "3", "1", "4"]],
+            "Bb/A": [["1", "3", "3", "0", "0", "x"], ["1", "4", "3", "0", "0", "0"]],
+            "A#": [["1", "3", "3", "3", "1", "x"], ["1", "4", "3", "2", "1", "0"]],
+            "Bb": [["1", "3", "3", "3", "1", "x"], ["1", "4", "3", "2", "1", "0"]],
+            "Bb/B": [["x", "3", "3", "3", "2", "x"], ["0", "4", "3", "2", "1", "0"]],
+            "A#m/C#": [["6", "6", "6", "3", "4", "x"], ["4", "4", "4", "1", "2", "0"]],
+            "A#m/F": [["1", "2", "3", "3", "1", "1"], ["1", "2", "4", "3", "1", "1"]],
+            "A#m": [["1", "2", "3", "3", "1", "x"], ["1", "2", "4", "3", "1", "0"]],
+            "A#dim": [["0", "2", "3", "2", "1", "x"], ["0", "3", "4", "2", "1", "0"]],
+            "A#7": [["1", "3", "1", "3", "1", "x"], ["1", "4", "1", "3", "1", "0"]],
+            "B/D": [["7", "4", "4", "4", "5", "x"], ["4", "1", "1", "1", "2", "0"]],
+            "B/D#": [["2", "0", "x", "1", "x", "x"], ["2", "0", "0", "1", "0", "0"]],
+            "B/F#": [["2", "4", "4", "4", "2", "2"], ["1", "4", "3", "2", "4", "1"]],
+            "B": [["2", "4", "4", "4", "2", "x"], ["1", "1", "3", "4", "1", "0"]],
+            "Bm/D": [["2", "0", "x", "0", "x", "x"], ["1", "0", "0", "0", "0", "0"]],
+            "Bm/F#": [["2", "0", "x", "0", "2", "2"], ["3", "0", "0", "0", "2", "1"]],
+            "Bm": [["2", "0", "x", "0", "2", "x"], ["2", "0", "0", "0", "1", "0"]],
+            "Bdim": [["1", "0", "x", "0", "2", "x"], ["1", "0", "0", "0", "2", "0"]],
+            "B7": [["2", "0", "2", "1", "2", "x"], ["4", "0", "3", "1", "2", "0"]],
+            "Bm7": [["2", "0", "2", "0", "2", "x"], ["3", "0", "2", "0", "1", "0"]],
+        };
+
+        const chordShapes = {};
+        const fingerShapes = {};
+
+        for (const chord in quitarShapes) {
+            const [firstShape, secondShape] = quitarShapes[chord];
+            chordShapes[chord] = firstShape;
+            fingerShapes[chord] = secondShape;
+        }
+
+
+
+        const transposeMap = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        let usedChords = new Set();
+        let missingChords = new Set();
+        let titleText = '';
+
+
+        const enharmonics = {
+            'Bb': 'A#', 'Eb': 'D#', 'Ab': 'G#',
+            'Db': 'C#', 'Gb': 'F#'
+        };
+
+        function transposeNote(note, step) {
+            // Convert flats to enharmonic sharps
+            const normalized = enharmonics[note] || note;
+
+            const index = transposeMap.indexOf(normalized);
+            if (index === -1) {
+                console.warn('Unknown note in transposeMap:', note);
+                return note;
+            }
+
+            return transposeMap[(index + step + 12) % 12];
+        }
+
+        function transposeChord(chord, step) {
+
+            const regex = /^([A-G][#b]?)([^\/]*)(?:\/([A-G][#b]?))?$/;
+            const match = chord.match(regex);
+
+            if (!match) {
+                console.warn('Could not parse chord:', chord);
+                return chord;
+            }
+
+            const [, root, suffix, bass] = match;
+
+            const newRoot = transposeNote(root, step);
+            const newBass = bass ? transposeNote(bass, step) : null;
+
+            const transposedChord = newRoot + (suffix || '') + (newBass ? '/' + newBass : '');
+
+            const exists = chordShapes[transposedChord] ? '✅' : '❌';
+            const debugKey = `${chord} => ${transposedChord}`;
+            if (!debugChordSet.has(debugKey)) {
+                debugChordSet.add(debugKey);
+                const $row = $('<tr>').append(
+                    $('<td>').text(chord),
+                    $('<td>').text(root),
+                    $('<td>').text(suffix || ''),
+                    $('<td>').text(bass || ''),
+                    $('<td>').text(transposedChord),
+                    $('<td>').text(exists)
+                );
+                $('#transpose-debug-table tbody').append($row);
+            }
+
+
+
+
+            return transposedChord;
+        }
+
+
+        function renderDiagram(shape, fingers) {
+            const size = parseInt(document.getElementById('fret-size').value, 10) || 20;
+
+            // Get min fret
+            const frets = shape
+                .map(f => parseInt(f))
+                .filter(f => !isNaN(f) && f > 0);
+            const minFret = frets.length > 0 ? Math.min(...frets) : 1;
+            const maxFret = frets.length > 0 ? Math.max(...frets) : 1;
+            const offset = maxFret > 5 ? (minFret - 1) : 0;
+
+            // Fr label row
+            const frLabelRow = maxFret > 5
+                ? `<div class="fr-labels" style="
+            display: grid;
+            grid-template-columns: repeat(6, ${size}px);
+            gap: 2px;
+            margin-bottom: 2px;
+        ">
+        <div style="
+            grid-column: 1 / span 6;
+            text-align: right;
+            font-size: 0.875rem;
+            font-weight: bold;
+            color: #0066cc;
+            padding-right: 4px;
+            padding-bottom: 4px;
+        ">${minFret}fr</div>
+    </div>` : '';
+
+            // Mute/open marker row
+            const markerRow = `<div class="marker-labels" style="
+        display: grid;
+        grid-template-columns: repeat(6, ${size}px);
+        gap: 2px;
+        margin-bottom: 2px;
+        padding-bottom: 0px;
+    ">
+    ${shape.map((val, i) => {
+                if (val === 'x') return `<div style="text-align:center; font-size:${Math.round(size * 0.6)}px; color:#000;">×</div>`;
+                if (val === '0') return `<div style="text-align:center; font-size:${Math.round(size * 0.6)}px; color:#000;">○</div>`;
+                return `<div></div>`;
+            }).reverse().join('')}
+    </div>`;
+
+            const labels = getStringLabelsHTML();
+
+            // Compute barre map per row
+            const rowFingerMap = {}; // { rowIndex: { finger: [col1, col2, ...] } }
+
+            for (let col = 0; col < 6; col++) {
+                const fret = parseInt(shape[col]);
+                const adjustedFret = isNaN(fret) || fret === 0 ? fret : fret - offset;
+                const finger = fingers ? fingers[col] : null;
+                if (!isNaN(adjustedFret) && finger && finger !== '0') {
+                    const row = adjustedFret - 1;
+                    if (!rowFingerMap[row]) rowFingerMap[row] = {};
+                    if (!rowFingerMap[row][finger]) rowFingerMap[row][finger] = [];
+                    rowFingerMap[row][finger].push(col); // store string (col)
+                }
+            }
+
+            // Build fretboard
+            let fretboard = `<div class="fretboard" style="
+        display: grid;
+        grid-template-columns: repeat(6, ${size}px);
+        grid-template-rows: repeat(5, ${size}px);
+        gap: 2px;
+    ">`;
+
+            for (let row = 0; row < 5; row++) {
+                for (let col = 5; col >= 0; col--) {
+                    const string = col;
+                    const fret = parseInt(shape[string]);
+                    const adjustedFret = isNaN(fret) || fret === 0 ? fret : fret - offset;
+                    const finger = fingers ? fingers[string] : null;
+                    const isDot = !isNaN(adjustedFret) && (adjustedFret - 1 === row);
+
+                    let content = '';
+
+                    if (isDot) {
+                        content = `<div class="dot" style="color:white; font-size:10px; display:flex; align-items:center; justify-content:center;">${finger}</div>`;
+                    } else if (
+                        rowFingerMap[row] // check if barre row
+                    ) {
+                        for (const fing in rowFingerMap[row]) {
+                            const cols = rowFingerMap[row][fing];
+                            if (cols.length >= 2) {
+                                const min = Math.min(...cols);
+                                const max = Math.max(...cols);
+                                const strIndex = col;
+                                if (strIndex > min && strIndex < max) {
+                                    content = `<div style="text-align:center; font-size:16px; line-height:${size}px;">—</div>`;
+                                }
+                            }
+                        }
+                    }
+
+                    fretboard += `<div style="width:${size}px;height:${size}px;">${content}</div>`;
+                }
+            }
+
+            fretboard += '</div>';
+
+            return frLabelRow + markerRow + fretboard + labels;
+        }
+
+
+
+        function highlightChords(line) {
+            return line.replace(/([A-G][#b]?(?:maj9|maj7|m7b5|add9|sus[234]?|dim|aug|m7|m|7|6|9|13)?(?:\/[A-G][#b]?)?)/g, (match) => {
+                const clean = match.trim();
+                usedChords.add(clean);
+                const shape = getOrFetchChordShape(clean);
+                const diagram = shape ? `<div class="chord-diagram">${renderDiagram(shape, fingerShapes[clean])}</div>` : '';
+                return `<span class="chord" data-length="${match.length}" data-original="${clean}">${match}${diagram}</span>`;
+            });
+        }
+
+        function getOrFetchChordShape(chord) {
+
+            if (chordShapes[chord]) {
+                return chordShapes[chord];
+            }
+
+            let shape = null;
+
+            $.ajax({
+                //url: `guitar.html?c=${encodeURIComponent(chord)}`,
+                url: `guitar.html`, // fixed value as a sample
+                method: 'GET',
+                async: false, // synchronous call to ensure result before return
+                success: function (data) {
+                    try {
+                        const parsed = JSON.parse(data.replace(/'/g, '"'));
+                        if (Array.isArray(parsed) && parsed.length === 2) {
+                            chordShapes[chord] = parsed[0];
+                            fingerShapes[chord] = parsed[1];
+                            shape = parsed[0];
+                        } else {
+                            console.warn(`Unexpected format for chord ${chord}:`, parsed);
+                        }
+                    } catch (e) {
+                        console.error(`Failed to parse chord "${chord}":`, data);
+                        missingList.push(chord);
+                    }
+                },
+                error: function () {
+                    console.warn(`Failed to load chord: ${chord}`);
+                    missingList.push(chord);
+                }
+            });
+
+            return shape;
+        }
+
+        function transposeChords(step) {
+            $('#transpose-debug-table tbody').empty();
+            debugChordSet.clear();
+
+            const newUsedChords = new Set();
+            const newMissingChords = new Set();
+
+            $('.chord').each(function () {
+                const $chord = $(this);
+                const original = $chord.attr('data-original')?.trim() || $chord.text().trim();
+                const newChord = transposeChord(original, step);
+                $chord.attr('data-original', newChord);
+                newUsedChords.add(newChord);
+
+                const shape = getOrFetchChordShape(newChord);
+                const diagram = shape ? `<div class="chord-diagram">${renderDiagram(shape, fingerShapes[newChord])}</div>` : '';
+                const missingStyle = shape ? '' : ' style="color:red;" title="Chord not found in chart"';
+                if (!shape) newMissingChords.add(newChord);
+
+                // Replace chord content (no added spacing)
+                $chord.html(`<span${missingStyle}>${newChord}</span>${diagram}`);
+
+                // Adjust spacing in text node following the chord
+                const originalLength = parseInt($chord.attr('data-length'), 10) || original.length;
+                const newLength = newChord.length;
+                const spaceDiff = originalLength - newLength;
+
+                $chord.attr('data-length', newLength); // Save new length
+
+                // Adjust the following text node (usually spaces between chords)
+                const nextNode = $chord[0].nextSibling;
+                if (nextNode && nextNode.nodeType === 3) {
+                    let spacing = nextNode.nodeValue;
+                    if (spaceDiff > 0) {
+                        spacing = ' '.repeat(spaceDiff) + spacing;
+                    } else if (spaceDiff < 0) {
+                        spacing = spacing.slice(-spaceDiff); // remove excess
+                    }
+                    nextNode.nodeValue = spacing;
+                }
+            });
+
+            usedChords = newUsedChords;
+            missingChords = newMissingChords;
+
+            renderChordChart();
+            applyFretSize();
+        }
+
+
+        function render() {
+            const lines = input.split('\n');
+            let html = '';
+            let chordBuffer = '';
+            usedChords.clear();
+            missingChords.clear();
+
+            lines.forEach(line => {
+                const match = line.match(/^(.*)@(T|C|L|H|F)$/);
+                if (!match) return;
+                const content = match[1];
+                const type = match[2];
+
+                switch (type) {
+                    case 'H':
+                        titleText = content.replace('<title>', '');
+                        break;
+                    case 'T':
+                        const T_LABELS = {
+                            '<w>': { label: '' },
+                            '<w1>': { label: '' },
+                            '<w2>': { label: '' },
+                            '<w3>': { label: '' },
+                            '<w4>': { label: '' },
+                            '<c>': { label: 'Επωδός' },
+                            '<d>': { label: 'Πέρασμα' },
+                            '<CODA>': { label: 'Coda' }
+                        };
+                        const entry = T_LABELS[content];
+                        const label = entry?.label ?? content;
+                        html += `<br><div class="section-separator"></div><div class="text-label">${label}</div>`;
+                        break;
+                    case 'C':
+                        chordBuffer = highlightChords(content);
+                        break;
+                    case 'L':
+                        html += `<div class="chord-line">${chordBuffer || ''}</div>`;
+                        html += `<div class="lyric-line">${content}</div>`;
+                        chordBuffer = '';
+                        break;
+                    case 'F':
+                        html += `<div class="lyric-line">${content}</div>`;
+                }
+            });
+
+            document.getElementById('title').innerText = titleText;
+            $('#output').html(html);
+            renderChordChart();
+        }
+
+
+        function renderChordChart() {
+            const grid = $('#chart-grid');
+            const missing = $('#missing-chords');
+            grid.html('');
+            missing.html('');
+
+            Array.from(usedChords).sort().forEach(chord => {
+                const shape = chordShapes[chord];
+                const fingers = fingerShapes[chord];
+                if (!shape) return;
+
+                // Detect minimum fretted fret > 0
+                const frets = shape
+                    .map(f => parseInt(f))
+                    .filter(f => !isNaN(f) && f > 0);
+                const minFret = frets.length > 0 ? Math.min(...frets) : 1;
+                const maxFret = frets.length > 0 ? Math.max(...frets) : 1;
+
+                let adjustedShape = [...shape];  // clone original
+                let adjustedFingers = [...fingers];  // clone fingers too
+                let fretLabel = '';
+
+                if (maxFret > 5) {
+                    const offset = minFret - 1;
+                    adjustedShape = shape.map(f => {
+                        const n = parseInt(f);
+                        return isNaN(n) || n === 0 ? f : (n - offset).toString();
+                    });
+                    // optional: fingers remain unchanged
+                    fretLabel = `<span style="
+                                font-size: 0.875rem;
+                                font-weight: bold;
+                                color: #0066cc;
+                                margin-left: 6px;
+                            ">${minFret}fr</span>`;
+                }
+
+                grid.append(`
+            <div class="chart-item">
+                <div><strong>${chord}</strong>${fretLabel}</div>
+                ${renderDiagram(adjustedShape, adjustedFingers)}
+            </div>
+        `);
+            });
+
+            if (missingChords.size > 0) {
+                missing.html(`<div>Missing chord diagrams for: ${Array.from(missingChords).join(', ')}</div>`);
+            }
+
+            $('.chord-chart-container').show();
+        }
+
+
+
+        document.getElementById('download-pdf').addEventListener('click', () => {
+            const { jsPDF } = window.jspdf;
+
+            // 1. Create temp container
+            const contentToPrint = document.createElement('div');
+            contentToPrint.id = 'pdf-content';
+            contentToPrint.style.padding = '20px';
+            contentToPrint.style.background = 'white';
+            contentToPrint.style.width = '800px'; // match your layout
+
+            document.body.appendChild(contentToPrint);
+
+            // 2. Clone content by rendering it again inside the new container
+            const titleClone = document.getElementById('title').cloneNode(true);
+            const outputClone = document.getElementById('output').cloneNode(true);
+            const chartClone = document.querySelector('.chord-chart-container').cloneNode(true);
+
+            contentToPrint.appendChild(titleClone);
+            contentToPrint.appendChild(outputClone);
+            contentToPrint.appendChild(chartClone);
+
+            // 3. Wait for layout before rendering to canvas
+            setTimeout(() => {
+                html2canvas(contentToPrint, { scale: 2 }).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jsPDF('p', 'mm', 'a4');
+
+                    const margin = 20;
+                    const pageWidth = pdf.internal.pageSize.getWidth();
+                    const pageHeight = pdf.internal.pageSize.getHeight();
+
+                    const headerHeight = 5;
+                    const headerTextY = margin - 5;
+
+                    const imgWidth = pageWidth - margin * 2;
+                    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                    const maxHeight = pageHeight - margin * 2;
+                    const finalImgHeight = imgHeight > maxHeight ? maxHeight : imgHeight;
+                    const position = margin + headerHeight;
+
+                    // Header
+                    function drawHeader(doc) {
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(10);
+                        doc.text('MyTitle', margin, headerTextY, { align: 'left' });
+                        doc.text('MyTitle' + key + '.html', pageWidth - margin, headerTextY, { align: 'right' });
+                        doc.setLineWidth(0.1);
+                        doc.line(margin, margin - 2, pageWidth - margin, margin - 2);
+                    }
+
+                    // Footer
+                    function drawFooter(doc) {
+                        const footerTextY = pageHeight - 10;
+                        const lineY = footerTextY - 6;
+                        doc.setLineWidth(0.1);
+                        doc.setDrawColor(200);
+                        doc.line(margin, lineY, pageWidth - margin, lineY);
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(10);
+                        doc.setTextColor(0);
+                        doc.text('MyTitle', margin, footerTextY, { align: 'left' });
+                    }
+
+                    drawHeader(pdf);
+                    drawFooter(pdf);
+                    pdf.addImage(imgData, 'PNG', margin, position, imgWidth, finalImgHeight);
+                    pdf.save('chord-sheet.pdf');
+
+                    // Clean up
+                    document.body.removeChild(contentToPrint);
+                });
+            }, 100); // small delay to allow layout
+        });
+
+
+
+        $('#font-size-input').on('input', function () {
+            const fontSize = parseInt($(this).val(), 10);
+            $('#output').css('font-size', fontSize + 'px');
+            $('#title').css('font-size', (fontSize + 2) + 'px');
+        });
+
+
+        // Save on input
+        $('#fret-size').on('input', function () {
+            localStorage.setItem('fretSize', this.value);
+            // (include resizing logic here too)
+            applyFretSize();
+        });
+
+        function applyFretSize() {
+            const size = parseInt($('#fret-size').val());
+
+            $('.fretboard').css({
+                'grid-template-columns': `repeat(6, ${size}px)`,
+                'grid-template-rows': `repeat(5, ${size}px)`
+            });
+
+            $('.fretboard div').css({
+                'width': `${size}px`,
+                'height': `${size}px`
+            });
+
+            const dotSize = Math.round(size * 0.85);
+            $('.dot').css({
+                'width': `${dotSize}px`,
+                'height': `${dotSize}px`,
+                'border-radius': `${dotSize / 2}px`
+            });
+
+            // 🔁 Resize string labels
+            $('.string-labels').css({
+                'grid-template-columns': `repeat(6, ${size}px)`
+            });
+
+            $('.string-labels div').css({
+                'width': `${size}px`,
+                'height': `${size}px`,
+                'font-size': `${Math.round(size * 0.7)}px`,
+                'line-height': `${size}px`
+            });
+
+            // 🔁 Resize marker labels (× ○)
+            $('.marker-labels').css({
+                'grid-template-columns': `repeat(6, ${size}px)`
+            });
+
+            $('.marker-labels div').css({
+                'width': `${size}px`,
+                'height': `${size}px`,
+                'font-size': `${Math.max(16, Math.round(size * 0.5))}px`,
+                'font-weight': 'bold',
+                'line-height': `${size}px`,
+                'display': 'flex',
+                'align-items': 'center',
+                'justify-content': 'center',
+            });
+        }
+
+        function getStringLabelsHTML() {
+            const size = parseInt(document.getElementById('fret-size').value, 10) || 20;
+
+            const labels = ['E', 'A', 'D', 'G', 'B', 'e'];
+            return `
+            <div class="string-labels" style="
+                display: grid;
+                grid-template-columns: repeat(6, ${size}px);
+                gap: 2px;
+            ">
+            ${labels.map(label => `
+                <div style="
+                    width: ${size}px;
+                    height: ${size}px;
+                    font-weight: bold;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: ${Math.round(size * 0.5)}px;
+                    line-height: 1;
+                    padding: 0;
+                    margin: 0;
+                        ">${label}</div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+
+        function populateDebugTableWithoutTranspose() {
+            $('#transpose-debug-table tbody').empty();
+            debugChordSet.clear();
+
+            $('.chord').each(function () {
+                //const chord = $(this).text().trim();
+                const chord = $(this).attr('data-original')?.trim() || $(this).text().trim();
+                const regex = /^([A-G][#b]?)([^\/]*)(?:\/([A-G][#b]?))?$/;
+                const match = chord.match(regex);
+
+                if (!match) return;
+
+                const [, root, suffix, bass] = match;
+                const exists = chordShapes[chord] ? '✅' : '❌';
+
+                const debugKey = `${chord} =>`;
+                if (!debugChordSet.has(debugKey)) {
+                    debugChordSet.add(debugKey);
+                    const $row = $('<tr>').append(
+                        $('<td>').text(chord),
+                        $('<td>').text(root),
+                        $('<td>').text(suffix || ''),
+                        $('<td>').text(bass || ''),
+                        $('<td>').text(''), // empty transposed column
+                        $('<td>').text(exists)
+                    );
+                    $('#transpose-debug-table tbody').append($row);
+                }
+            });
+        }
+
+        document.querySelectorAll('.step-button').forEach(button => {
+            button.addEventListener('click', () => {
+                const inputId = button.dataset.target;
+                const step = parseInt(button.dataset.step, 10);
+                const input = document.getElementById(inputId);
+                const min = parseInt(input.min, 10);
+                const max = parseInt(input.max, 10);
+                let value = parseInt(input.value, 10) || 0;
+
+                value = Math.min(Math.max(value + step, min), max);
+                input.value = value;
+                input.dispatchEvent(new Event('input')); // Trigger any live update
+            });
+        });
+
+        $(document).ready(function () {
+            const urlParams = new URLSearchParams(window.location.search);
+            key = urlParams.get('c');
+            key = 1; // fixed value as a sample
+            const showDebug = new URLSearchParams(window.location.search).get('debug') === '1';
+            if (showDebug) {
+                $('#transpose-debug-container').show();
+            }
+
+            if (key) {
+                $('#print-footer').text(`MyTitle ${key}`);
+                $.ajax({
+                    //url: 'chord_sheet.html?c=' + encodeURIComponent(key),
+                    url: 'chord_sheet.html', // fixed value as a sample
+                    cache: false,
+                    success: function (data) {
+                        input = data;
+                        // console.log(input);
+                        render();
+
+                        // Load settings
+                        const savedSize = localStorage.getItem('fretSize');
+                        if (savedSize) {
+                            $('#fret-size').val(savedSize).trigger('input');
+                            applyFretSize();
+                        }
+
+                        const savedFontSize = localStorage.getItem('fontSize') || $('#font-size-input').val();
+                        $('#font-size-input').val(savedFontSize);
+                        const baseFontSize = parseInt(savedFontSize, 10);
+                        $('#output').css('font-size', baseFontSize + 'px');
+                        $('#title').css('font-size', (baseFontSize + 2) + 'px');
+                        populateDebugTableWithoutTranspose();
+                    },
+                    error: function () {
+                        $('#output').html('<p style="color:red;">Error loading chord sheet. Please try again.</p>');
+                    }
+                });
+            } else {
+                $('#output').html('<p style="color:red;">No chord sheet specified. Please provide a "c" parameter in the URL.</p>');
+            }
+
+            // Save changes to localStorage on input
+            $('#font-size-input').on('input', function () {
+                const newSize = $(this).val() + 'px';
+                $('#output').css('font-size', newSize);
+                localStorage.setItem('fontSize', $(this).val());
+            });
+
+            $('#transpose-up').click(() => transposeChords(1));
+            $('#transpose-down').click(() => transposeChords(-1));
+        });
+
+
+
+
+    </script>
+</body>
+
+</html>
